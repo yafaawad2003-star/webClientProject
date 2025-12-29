@@ -1,0 +1,29 @@
+body {
+    background: #f6f7fb;
+}
+
+.card-title.truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.pointer {
+    cursor: pointer;
+}
+
+.sidebar {
+    background: white;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.mainpanel {
+    background: white;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    padding: 12px;
+    min-height: 400px;
+}
