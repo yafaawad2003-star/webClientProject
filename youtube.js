@@ -1,15 +1,12 @@
 // youtube.js
-const API_BASE = "https://www.googleapis.com/youtube/v3/search";
+const API_BASE = "https://www.googleapis.com/youtube/v3";
 
-// TODO: Put your YouTube Data API v3 key here (do not commit private keys publicly)
-const YT_API_KEY = "AIzaSyCM__RdOfouWpcDKUhFKOvEp1paXbeP7LE"; // <-- ADD YOUR KEY
+const YT_API_KEY = "AIzaSyCM__RdOfouWpcDKUhFKOvEp1paXbeP7LE";
 
 export async function searchYouTube(query, maxResults = 12) {
-    if (!YT_API_KEY || YT_API_KEY.includes("PUT_YOUR")) {
-        throw new Error("Missing YouTube API key. Please add it in assets/youtube.js");
-    }
+    if (!YT_API_KEY) throw new Error("Missing YouTube API key");
 
-    // 1) search.list -> get video IDs
+    // 1) search.list
     const searchUrl = new URL(API_BASE + "/search");
     searchUrl.searchParams.set("part", "snippet");
     searchUrl.searchParams.set("type", "video");
@@ -21,10 +18,10 @@ export async function searchYouTube(query, maxResults = 12) {
     const sJson = await sRes.json();
     if (!sRes.ok) throw new Error(sJson?.error?.message || "YouTube search failed");
 
-    const ids = (sJson.items || []).map(it => it.id.videoId).filter(Boolean);
+    const ids = (sJson.items || []).map(it => it.id?.videoId).filter(Boolean);
     if (ids.length === 0) return [];
 
-    // 2) videos.list -> duration + viewCount + more details
+    // 2) videos.list
     const vUrl = new URL(API_BASE + "/videos");
     vUrl.searchParams.set("part", "snippet,contentDetails,statistics");
     vUrl.searchParams.set("id", ids.join(","));
@@ -45,13 +42,11 @@ export async function searchYouTube(query, maxResults = 12) {
 }
 
 export function isoDurationToText(iso) {
-    // ISO8601 like PT1H2M3S
     const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
     if (!m) return "0:00";
     const h = parseInt(m[1] || "0", 10);
     const min = parseInt(m[2] || "0", 10);
     const s = parseInt(m[3] || "0", 10);
-
     const mm = h > 0 ? String(min).padStart(2, "0") : String(min);
     const ss = String(s).padStart(2, "0");
     return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
