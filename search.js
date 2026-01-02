@@ -1,188 +1,232 @@
-requireLogin();
-renderHeader("search");
+import { requireAuthOrRedirect, getCurrentUser, logout, upsertUser, ensureDefaultPlaylist, getUserPlaylists } from "./storage.js";
+import { searchYouTube } from "./youtube.js";
 
-const user = getUserByUsername(getCurrentUsername());
-document.getElementById("welcome").textContent = `Welcome Message: שלום ${user.username}`;
+const username = requireAuthOrRedirect();
+ensureDefaultPlaylist(username);
 
+const welcome = document.getElementById("welcome");
+welcome.textContent = `Hello ${username} 👋`;
+
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  logout();
+  window.location.href = "login.html";
+});
+
+const alertBox = document.getElementById("alertBox");
 const resultsEl = document.getElementById("results");
-const errEl = document.getElementById("err");
+const form = document.getElementById("searchForm");
 const qInput = document.getElementById("q");
 
-const playerModal = new bootstrap.Modal("#playerModal");
-const favModal = new bootstrap.Modal("#favModal");
-const toast = new bootstrap.Toast("#saveToast");
+// QueryString sync requirement:
+// - load page with q=
+// - search updates q=
+// - leaving and coming back keeps state (querystring does it)
+const params = new URLSearchParams(window.location.search);
+const initialQ = params.get("q") || "";
+qInput.value = initialQ;
 
-let pendingVideo = null;
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = qInput.value.trim();
+  if (!q) return;
 
-function getQueryParam(name) {
-    return new URLSearchParams(window.location.search).get(name);
-}
+  // update querystring
+  const newParams = new URLSearchParams(window.location.search);
+  newParams.set("q", q);
+  window.history.replaceState({}, "", `search.html?${newParams.toString()}`);
 
-function setQueryParamAndPush(q) {
-    const url = new URL(window.location.href);
-    url.searchParams.set("q", q);
-    history.pushState({}, "", url);
-}
+  await doSearch(q);
+});
 
-function videoExistsInAnyPlaylist(videoId) {
-    return (user.playlists || []).some(p => (p.items || []).some(it => it.videoId === videoId));
-}
-
-function renderCards(items) {
-    resultsEl.innerHTML = "";
-
-    items.forEach(item => {
-        const videoId = item.id.videoId;
-        const title = item.snippet.title;
-        const thumb = item.snippet.thumbnails.medium.url;
-        const channelTitle = item.snippet.channelTitle;
-
-        const already = videoExistsInAnyPlaylist(videoId);
-
-        const col = document.createElement("div");
-        col.className = "col-md-4";
-
-        col.innerHTML = `
-      <div class="card h-100">
-        <img src="${thumb}" class="card-img-top pointer" data-action="play" data-id="${videoId}" data-title="${encodeURIComponent(title)}">
-        <div class="card-body">
-          <h6 class="card-title truncate-2" title="${title}">
-            <span class="pointer" data-action="play" data-id="${videoId}" data-title="${encodeURIComponent(title)}">${title}</span>
-          </h6>
-          <p class="small text-muted mb-2">${channelTitle}</p>
-
-          <button class="btn btn-sm ${already ? "btn-success" : "btn-outline-primary"}"
-                  data-action="fav"
-                  data-id="${videoId}"
-                  data-title="${encodeURIComponent(title)}"
-                  data-thumb="${encodeURIComponent(thumb)}"
-                  data-channel="${encodeURIComponent(channelTitle)}">
-            ${already ? "✔ נוסף" : "הוספה למועדפים"}
-          </button>
-        </div>
-      </div>
-    `;
-        resultsEl.appendChild(col);
-    });
+if (initialQ) {
+  doSearch(initialQ);
 }
 
 async function doSearch(q) {
-    errEl.textContent = "";
-    if (!q) return;
+  setAlert("", true);
+  resultsEl.innerHTML = skeletonCards(8);
 
-    try {
-        const data = await ytSearch(q);
-        renderCards(data.items || []);
-    } catch (e) {
-        errEl.textContent = "שגיאה בחיפוש. בדקי מפתח API או רשת.";
+  try {
+    const items = await searchYouTube(q, 12);
+    const playlists = getUserPlaylists(username);
+    const allVideoIdsInFav = new Set();
+    playlists.forEach(p => (p.items || []).forEach(it => allVideoIdsInFav.add(it.videoId)));
+
+    if (items.length === 0) {
+      resultsEl.innerHTML = `<div class="col-12"><div class="alert alert-info">No results.</div></div>`;
+      return;
     }
+
+    resultsEl.innerHTML = items.map(v => {
+      const inFav = allVideoIdsInFav.has(v.videoId);
+      const titleAttr = escapeHtml(v.title); // tooltip full title
+      const buttonText = inFav ? "Added ✓" : "Add to favorites";
+      const btnClass = inFav ? "btn btn-secondary" : "btn btn-brand";
+
+      return `
+      <div class="col-md-6 col-lg-4">
+        <div class="card h-100 p-2">
+          <div class="position-relative">
+            <img src="${v.thumbnail}" class="w-100 rounded-4" style="cursor:pointer;"
+                 data-action="play" data-video="${v.videoId}" data-title="${escapeAttr(v.title)}">
+            ${inFav ? `<span class="position-absolute top-0 end-0 m-2 badge text-bg-success">✓</span>` : ""}
+          </div>
+
+          <div class="p-2">
+            <div class="d-flex justify-content-between gap-2 mb-1">
+              <span class="badge badge-soft">${v.duration}</span>
+              <span class="text-secondary small">${formatViews(v.viewCount)} views</span>
+            </div>
+
+            <div class="fw-bold clamp-2" title="${titleAttr}" style="cursor:pointer;"
+                 data-action="play" data-video="${v.videoId}" data-title="${escapeAttr(v.title)}">
+              ${escapeHtml(v.title)}
+            </div>
+
+            <div class="text-secondary small mb-2">${escapeHtml(v.channelTitle)}</div>
+
+            <button class="${btnClass} w-100"
+                    ${inFav ? "disabled" : ""}
+                    data-action="add"
+                    data-video="${v.videoId}"
+                    data-title="${escapeAttr(v.title)}"
+                    data-thumb="${escapeAttr(v.thumbnail)}"
+                    data-duration="${escapeAttr(v.duration)}"
+                    data-views="${v.viewCount}">
+              ${buttonText}
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+  } catch (err) {
+    resultsEl.innerHTML = "";
+    setAlert(err.message || "Error searching YouTube");
+  }
 }
 
-function fillPlaylistDropdown() {
-    const sel = document.getElementById("playlistSelect");
-    sel.innerHTML = "";
-    (user.playlists || []).forEach(p => {
-        const opt = document.createElement("option");
-        opt.value = p.id;
-        opt.textContent = p.name;
-        sel.appendChild(opt);
-    });
-}
-
-document.getElementById("btnSearch").addEventListener("click", () => {
-    const q = qInput.value.trim();
-    setQueryParamAndPush(q);        // ✔️ querystring
-    doSearch(q);
-});
-
-// Back/Forward
-window.addEventListener("popstate", () => {
-    const q = getQueryParam("q") || "";
-    qInput.value = q;
-    doSearch(q);
-});
-
-// קליקים על תוצאות
 resultsEl.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-action]");
-    if (!el) return;
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
 
-    const action = el.getAttribute("data-action");
-    if (action === "play") {
-        const id = el.getAttribute("data-id");
-        const title = decodeURIComponent(el.getAttribute("data-title"));
+  const action = el.dataset.action;
+  const videoId = el.dataset.video;
+  const title = el.dataset.title || "";
 
-        document.getElementById("playerTitle").textContent = title;
-        document.getElementById("playerFrame").src = `https://www.youtube.com/embed/${id}`;
-        playerModal.show();
-    }
-
-    if (action === "fav") {
-        pendingVideo = {
-            videoId: el.getAttribute("data-id"),
-            title: decodeURIComponent(el.getAttribute("data-title")),
-            thumb: decodeURIComponent(el.getAttribute("data-thumb")),
-            channelTitle: decodeURIComponent(el.getAttribute("data-channel")),
-            addedAt: Date.now()
-        };
-        document.getElementById("favErr").textContent = "";
-        document.getElementById("newPlaylistName").value = "";
-        fillPlaylistDropdown();
-        favModal.show();
-    }
+  if (action === "play") openPlayer(videoId, title);
+  if (action === "add") openFavModal(el.dataset);
 });
 
-document.getElementById("btnAddFav").addEventListener("click", () => {
-    const favErr = document.getElementById("favErr");
-    favErr.textContent = "";
-    if (!pendingVideo) return;
+// ---- Player modal ----
+function openPlayer(videoId, title) {
+  document.getElementById("playerTitle").textContent = title;
+  const frame = document.getElementById("playerFrame");
+  frame.src = `https://www.youtube.com/embed/${videoId}`;
 
-    const newName = document.getElementById("newPlaylistName").value.trim();
-    const selectedId = document.getElementById("playlistSelect").value;
+  const modal = new bootstrap.Modal(document.getElementById("playerModal"));
+  modal.show();
 
-    // create playlist if typed
+  // stop video when closing
+  document.getElementById("playerModal").addEventListener("hidden.bs.modal", () => {
+    frame.src = "";
+  }, { once: true });
+}
+
+// ---- Favorites modal ----
+let pendingVideo = null;
+
+function openFavModal(data) {
+  pendingVideo = {
+    videoId: data.video,
+    title: data.title,
+    thumbnail: data.thumb,
+    duration: data.duration,
+    viewCount: Number(data.views || 0),
+    rating: 0
+  };
+
+  document.getElementById("favVideoTitle").textContent = pendingVideo.title;
+
+  // fill dropdown
+  const select = document.getElementById("playlistSelect");
+  const playlists = getUserPlaylists(username);
+  select.innerHTML = playlists.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+
+  document.getElementById("newPlaylistName").value = "";
+
+  const modal = new bootstrap.Modal(document.getElementById("favModal"));
+  modal.show();
+}
+
+document.getElementById("confirmAddBtn").addEventListener("click", () => {
+  if (!pendingVideo) return;
+
+  const newName = document.getElementById("newPlaylistName").value.trim();
+  const selectedId = document.getElementById("playlistSelect").value;
+
+  upsertUser(username, (u) => {
+    if (!u.playlists) u.playlists = [];
+
+    let targetPlaylist = null;
+
     if (newName) {
-        const newPl = {
-            id: "pl_" + Date.now(),
-            name: newName,
-            createdAt: Date.now(),
-            items: []
-        };
-        user.playlists = user.playlists || [];
-        user.playlists.push(newPl);
+      targetPlaylist = { id: crypto.randomUUID(), name: newName, items: [] };
+      u.playlists.push(targetPlaylist);
+    } else {
+      targetPlaylist = u.playlists.find(p => p.id === selectedId);
     }
 
-    // re-pick playlist after maybe creating
-    const finalId = newName ? user.playlists[user.playlists.length - 1].id : selectedId;
-    const pl = (user.playlists || []).find(p => p.id === finalId);
+    if (!targetPlaylist.items) targetPlaylist.items = [];
+    const already = targetPlaylist.items.some(it => it.videoId === pendingVideo.videoId);
+    if (!already) targetPlaylist.items.push(pendingVideo);
 
-    if (!pl) {
-        favErr.textContent = "בחרי פלייליסט או צרי חדש.";
-        return;
-    }
+    return u;
+  });
 
-    // אם כבר קיים בפלייליסט הזה – לא להוסיף כפול
-    if ((pl.items || []).some(it => it.videoId === pendingVideo.videoId)) {
-        favErr.textContent = "הסרטון כבר נמצא בפלייליסט.";
-        return;
-    }
+  const toastBody = document.getElementById("toastBody");
+  toastBody.innerHTML = `Video saved. <a href="playlists.html?pid=${encodeURIComponent(newName ? "" : selectedId)}">Go to playlists</a>`;
+  const toast = new bootstrap.Toast(document.getElementById("liveToast"));
+  toast.show();
 
-    pl.items = pl.items || [];
-    pl.items.push(pendingVideo);
+  // close modal
+  bootstrap.Modal.getInstance(document.getElementById("favModal")).hide();
 
-    updateUser(user); // ✔️ שמירה ל-LocalStorage
-
-    // Toast + לינק לפלייליסט (QueryString)
-    const link = document.getElementById("goToPlaylistLink");
-    link.href = `playlists.html?playlistId=${encodeURIComponent(pl.id)}`;
-    toast.show();
-
-    favModal.hide();
-    // רענון UI כדי להראות ✔ נוסף
-    doSearch(qInput.value.trim());
+  // refresh current search results to show ✓ and disable button
+  const q = new URLSearchParams(window.location.search).get("q") || qInput.value.trim();
+  if (q) doSearch(q);
 });
 
-// טעינה ראשונית לפי querystring
-const initialQ = getQueryParam("q") || "";
-qInput.value = initialQ;
-if (initialQ) doSearch(initialQ);
+// ---- helpers ----
+function setAlert(text, hide = false) {
+  alertBox.classList.toggle("d-none", hide || !text);
+  alertBox.textContent = text || "";
+}
+
+function formatViews(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+  return String(n);
+}
+
+function skeletonCards(count) {
+  return Array.from({ length: count }).map(() => `
+    <div class="col-md-6 col-lg-4">
+      <div class="card p-3">
+        <div class="placeholder-glow">
+          <div class="placeholder col-12 rounded-4" style="height:160px;"></div>
+          <div class="placeholder col-9 mt-3"></div>
+          <div class="placeholder col-6 mt-2"></div>
+          <div class="placeholder col-12 mt-3"></div>
+        </div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function escapeHtml(s = "") {
+  return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+function escapeAttr(s = "") {
+  return escapeHtml(s).replaceAll('"', "&quot;");
+}
