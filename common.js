@@ -1,34 +1,65 @@
-function renderHeader(activePage) {
-    const header = document.getElementById("appHeader");
-    if (!header) return;
+function getUsers() {
+  return JSON.parse(localStorage.getItem("users") || "[]");
+}
+function setUsers(users) {
+  localStorage.setItem("users", JSON.stringify(users));
+}
 
-    const username = getCurrentUsername();
-    const user = username ? getUserByUsername(username) : null;
+function getCurrentUser() {
+  return JSON.parse(sessionStorage.getItem("currentUser") || "null");
+}
+function setCurrentUser(u) {
+  sessionStorage.setItem("currentUser", JSON.stringify(u));
+}
+function logout() {
+  sessionStorage.removeItem("currentUser");
+  window.location.href = "login.html";
+}
 
-    header.innerHTML = `
-    <nav class="navbar navbar-expand-lg bg-white border-bottom">
-      <div class="container">
-        <a class="navbar-brand fw-bold" href="index.html">WEB CLIENT</a>
+function requireAuth() {
+  const u = getCurrentUser();
+  if (!u) window.location.href = "login.html";
+  return u;
+}
 
-        <div class="d-flex gap-2 align-items-center">
-          <a class="btn btn-outline-primary btn-sm ${activePage === "search" ? "active" : ""}" href="search.html">חיפוש</a>
-          <a class="btn btn-outline-primary btn-sm ${activePage === "playlists" ? "active" : ""}" href="playlists.html">פלייליסטים</a>
+function renderHeader({ active = "" } = {}) {
+  const header = document.getElementById("appHeader");
+  if (!header) return;
 
-          ${user ? `
-            <div class="d-flex align-items-center gap-2 ms-2">
-              <span class="small">שלום, <b>${user.username}</b></span>
-              <img src="${user.imageUrl}" alt="user" style="width:32px;height:32px;border-radius:50%;object-fit:cover">
-              <button class="btn btn-sm btn-danger ms-2" id="btnLogout">התנתקות</button>
-            </div>
-          ` : `
-            <a class="btn btn-sm btn-success" href="login.html">התחברות</a>
-            <a class="btn btn-sm btn-secondary" href="register.html">הרשמה</a>
-          `}
+  const u = getCurrentUser();
+  const userHtml = u
+    ? `
+      <div class="user-pill">
+        <img src="${u.imageUrl || "https://i.pravatar.cc/80?img=12"}" alt="user">
+        <div class="small">
+          <div class="fw-semibold">${u.username}</div>
+          <a href="#" class="text-decoration-none small" id="logoutBtn">Logout</a>
         </div>
       </div>
-    </nav>
+    `
+    : `<a class="btn btn-dark btn-sm" href="login.html">Login</a>`;
+
+  header.innerHTML = `
+  <nav class="navbar navbar-expand-lg bg-transparent py-3">
+    <div class="container app-shell">
+      <a class="navbar-brand" href="index.html">TubeTracker</a>
+
+      <div class="d-flex align-items-center gap-2">
+        ${u ? `
+          <a class="btn btn-outline-dark btn-sm ${active === "search" ? "active" : ""}" href="search.html">Search</a>
+          <a class="btn btn-outline-dark btn-sm ${active === "playlists" ? "active" : ""}" href="playlists.html">Playlists</a>
+        ` : `
+          <a class="btn btn-outline-dark btn-sm" href="register.html">Register</a>
+        `}
+        ${userHtml}
+      </div>
+    </div>
+  </nav>
   `;
 
-    const btn = document.getElementById("btnLogout");
-    if (btn) btn.addEventListener("click", logout);
+  const btn = document.getElementById("logoutBtn");
+  if (btn) btn.addEventListener("click", (e) => {
+    e.preventDefault();
+    logout();
+  });
 }
