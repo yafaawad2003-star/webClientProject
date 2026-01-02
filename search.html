@@ -1,96 +1,101 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="he" dir="rtl">
 
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Search</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="assets/styles.css">
 </head>
 
 <body>
-    <div id="appHeader"></div>
 
-    <div class="container mt-4">
-        <div class="bg-white border rounded-4 p-3">
-            <h4 id="welcome" class="mb-3"></h4>
+    <nav class="navbar navbar-expand-lg bg-white border-bottom">
+        <div class="container">
+            <a class="navbar-brand" href="search.html">TubeTracker</a>
 
-            <div class="d-flex gap-2">
-                <input id="q" class="form-control" placeholder="חפש שם שיר / זמר..." />
-                <button id="btnSearch" class="btn btn-primary">חיפוש</button>
+            <div class="ms-auto d-flex gap-2 align-items-center">
+                <a class="btn btn-outline-secondary" href="playlist.html">My Playlists</a>
+                <button id="logoutBtn" class="btn btn-outline-danger">Logout</button>
             </div>
-            <div class="text-danger mt-2" id="err"></div>
+        </div>
+    </nav>
+
+    <main class="container my-4">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div>
+                <h3 class="fw-bold mb-0">Search</h3>
+                <div id="welcome" class="text-secondary"></div>
+            </div>
+
+            <form id="searchForm" class="d-flex gap-2" style="min-width:280px;">
+                <input id="q" class="form-control" placeholder="Search YouTube..." />
+                <button class="btn btn-brand" type="submit">Search</button>
+            </form>
         </div>
 
-        <div class="row g-3 mt-2" id="results"></div>
-    </div>
+        <div id="alertBox" class="alert alert-warning d-none"></div>
+
+        <div id="results" class="row g-3"></div>
+    </main>
 
     <!-- Player Modal -->
     <div class="modal fade" id="playerModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="playerTitle"></h5>
-                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 id="playerTitle" class="modal-title"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="ratio ratio-16x9">
-                        <iframe id="playerFrame" allowfullscreen></iframe>
-                    </div>
+                <div class="modal-body ratio ratio-16x9">
+                    <iframe id="playerFrame" allowfullscreen></iframe>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Add to Playlist Modal -->
+    <!-- Add to playlist Modal -->
     <div class="modal fade" id="favModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">הוספה למועדפים</h5>
-                    <button class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title">Add to playlist</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-2">
-                        <label class="form-label">בחר פלייליסט קיים</label>
-                        <select id="playlistSelect" class="form-select"></select>
-                    </div>
-                    <hr />
-                    <div class="mb-2">
-                        <label class="form-label">או צור פלייליסט חדש</label>
-                        <input id="newPlaylistName" class="form-control" placeholder="שם פלייליסט חדש..." />
-                    </div>
-                    <div class="text-danger" id="favErr"></div>
+                    <div class="mb-2 fw-bold" id="favVideoTitle"></div>
+
+                    <label class="form-label">Option 1: Choose existing playlist</label>
+                    <select id="playlistSelect" class="form-select mb-3"></select>
+
+                    <div class="text-center text-secondary my-2">— OR —</div>
+
+                    <label class="form-label">Option 2: Create new playlist</label>
+                    <input id="newPlaylistName" class="form-control" placeholder="New playlist name" />
+                    <div class="form-text">If you type a name, we will create it and add the video there.</div>
                 </div>
                 <div class="modal-footer">
-                    <button class="btn btn-success" id="btnAddFav">הוסף</button>
+                    <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button id="confirmAddBtn" class="btn btn-brand">Add</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Toast -->
-    <div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
-        <div id="saveToast" class="toast">
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="liveToast" class="toast" role="alert">
             <div class="toast-header">
-                <strong class="me-auto">נשמר</strong>
-                <button class="btn-close" data-bs-dismiss="toast"></button>
+                <strong class="me-auto">Saved</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
             </div>
-            <div class="toast-body">
-                נוסף לפלייליסט. <a id="goToPlaylistLink" href="playlists.html">עבור לרשימה</a>
-            </div>
+            <div class="toast-body" id="toastBody"></div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-    <script src="js/storage.js"></script>
-    <script src="js/auth.js"></script>
-    <script src="js/common.js"></script>
-    <script src="js/youtube.js"></script>
-    <script src="js/config.js"></script>
-    <script src="js/search.js"></script>
+    <script type="module" src="assets/search.js"></script>
 </body>
 
 </html>
